@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173b32">
+  <meta name="description" content="Panel local de gestión de mantenimiento CMMS con filtros, análisis de confiabilidad e informe PDF.">
+  <title>GMAO | Gestión de mantenimiento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Navegación principal">
+      <a class="brand" href="#panorama" aria-label="GMAO, inicio">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span class="brand-copy"><strong>GMAO</strong><small>ACTIVOS · CONFIABILIDAD</small></span>
+      </a>
+
+      <div class="sidebar-label">ANÁLISIS</div>
+      <nav class="primary-nav" aria-label="Vistas del análisis">
+        <button class="nav-item is-active" type="button" data-view="panorama" aria-current="page">
+          <i data-lucide="layout-dashboard" aria-hidden="true"></i><span>Panorama</span><span class="nav-index">01</span>
+        </button>
+        <button class="nav-item" type="button" data-view="activos">
+          <i data-lucide="factory" aria-hidden="true"></i><span>Activos</span><span class="nav-index">02</span>
+        </button>
+        <button class="nav-item" type="button" data-view="fallas">
+          <i data-lucide="activity" aria-hidden="true"></i><span>Modos de falla</span><span class="nav-index">03</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="local-note"><span class="local-dot"></span><span>Procesamiento en el navegador</span></div>
+        <div class="sidebar-rule"></div>
+        <span class="sidebar-caption">MEC048H · GESTIÓN DE ACTIVOS</span>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb"><span>CMMS</span><i data-lucide="chevron-right" aria-hidden="true"></i><strong id="breadcrumb-view">Panorama</strong></div>
+        <div class="topbar-actions">
+          <span class="dataset-badge" id="dataset-status"><span class="status-dot"></span><span id="dataset-name">Cargando dataset</span></span>
+          <button class="button button-secondary" id="upload-trigger" type="button" title="Cargar un archivo CSV">
+            <i data-lucide="upload" aria-hidden="true"></i><span>Cargar CSV</span>
+          </button>
+          <input id="file-input" class="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Seleccionar dataset CSV">
+          <button class="button button-primary" id="pdf-button" type="button" title="Preparar el informe y abrir el diálogo Guardar como PDF" disabled>
+            <i data-lucide="file-down" aria-hidden="true"></i><span>Exportar informe</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="page-heading" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow"><span class="eyebrow-line"></span> INTELIGENCIA DE MANTENIMIENTO</p>
+          <h1 id="page-title">Mantenimiento <span>bajo control.</span></h1>
+          <p class="heading-subtitle">Indicadores operacionales, criticidad y patrones de falla en una sola vista.</p>
+        </div>
+        <div class="heading-meta"><span class="meta-label">PERÍODO ANALIZADO</span><strong id="period-label">—</strong></div>
+      </section>
+
+      <section class="filter-bar" aria-label="Filtros del análisis">
+        <div class="filter-heading"><i data-lucide="list-filter" aria-hidden="true"></i><span>FILTRAR</span></div>
+        <label class="filter-control"><span>Desde</span><input id="date-from" type="date" aria-label="Fecha desde"></label>
+        <label class="filter-control"><span>Hasta</span><input id="date-to" type="date" aria-label="Fecha hasta"></label>
+        <label class="filter-control filter-select"><span>Área</span><select id="area-filter" aria-label="Filtrar por área"><option value="">Todas las áreas</option></select></label>
+        <label class="filter-control filter-select"><span>Mantenimiento</span><select id="type-filter" aria-label="Filtrar por tipo de mantenimiento"><option value="">Todos los tipos</option></select></label>
+        <label class="filter-control filter-select"><span>Criticidad</span><select id="criticality-filter" aria-label="Filtrar por criticidad"><option value="">Todas</option></select></label>
+        <button class="filter-reset" id="reset-filters" type="button" title="Restablecer filtros"><i data-lucide="rotate-ccw" aria-hidden="true"></i><span>Limpiar</span></button>
+      </section>
+
+      <div class="data-line" role="status" aria-live="polite">
+        <span id="record-summary">Esperando datos</span>
+        <span class="data-line-right"><span class="data-quality" id="quality-summary">—</span><span class="separator-dot">·</span><span id="refresh-time">—</span></span>
+      </div>
+
+      <section class="kpi-grid" aria-label="Indicadores principales">
+        <article class="kpi-card kpi-card-primary">
+          <div class="kpi-top"><span>ÓRDENES DE TRABAJO</span><i data-lucide="clipboard-list" aria-hidden="true"></i></div>
+          <div class="kpi-value" id="kpi-orders">—</div>
+          <div class="kpi-foot"><span class="kpi-accent"></span><span id="kpi-orders-note">OT únicas en el período</span></div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-top"><span>PESO CORRECTIVO</span><i data-lucide="wrench" aria-hidden="true"></i></div>
+          <div class="kpi-value" id="kpi-corrective">—</div>
+          <div class="kpi-foot"><span class="kpi-accent accent-coral"></span><span>participación en OT</span></div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-top"><span>DOWNTIME ACUMULADO</span><i data-lucide="timer" aria-hidden="true"></i></div>
+          <div class="kpi-value" id="kpi-downtime">—</div>
+          <div class="kpi-foot"><span class="kpi-accent accent-amber"></span><span>horas de indisponibilidad</span></div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-top"><span>COSTO DIRECTO</span><i data-lucide="coins" aria-hidden="true"></i></div>
+          <div class="kpi-value kpi-currency" id="kpi-cost">—</div>
+          <div class="kpi-foot"><span class="kpi-accent accent-blue"></span><span>CLP registrados en CMMS</span></div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-top"><span>MTTR CORRECTIVO</span><i data-lucide="clock-3" aria-hidden="true"></i></div>
+          <div class="kpi-value" id="kpi-mttr">—</div>
+          <div class="kpi-foot"><span class="kpi-accent accent-lime"></span><span id="kpi-mttr-note">h · reparaciones válidas</span></div>
+        </article>
+      </section>
+
+      <section class="view-panel is-active" id="view-panorama" data-panel="panorama" aria-label="Panorama de mantenimiento">
+        <div class="section-heading"><div><span class="section-kicker">01 / DESEMPEÑO</span><h2>Actividad y recursos</h2></div><span class="section-note">Participación por estrategia · período seleccionado</span></div>
+        <div class="chart-grid chart-grid-two">
+          <article class="chart-card chart-card-wide">
+            <div class="chart-heading"><div><h3>Impacto por tipo de mantenimiento</h3><p>OT, horas-hombre, downtime y costo sobre sus totales</p></div><span class="chart-unit">%</span></div>
+            <div class="chart-canvas chart-canvas-tall"><canvas id="impact-chart" aria-label="Impacto porcentual por tipo de mantenimiento"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Órdenes de trabajo</h3><p>OT únicas por estrategia de mantenimiento</p></div><span class="chart-unit">OT</span></div>
+            <div class="chart-canvas"><canvas id="ot-chart" aria-label="Órdenes de trabajo por tipo"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Horas-hombre</h3><p>Esfuerzo registrado por tipo de mantenimiento</p></div><span class="chart-unit">h</span></div>
+            <div class="chart-canvas"><canvas id="labor-chart" aria-label="Horas-hombre por tipo"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Volumen mensual</h3><p>Órdenes únicas por fecha de inicio</p></div><span class="chart-unit">OT</span></div>
+            <div class="chart-canvas"><canvas id="trend-chart" aria-label="Volumen de órdenes por mes"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Equipos con mayor downtime</h3><p>Diez activos con más horas acumuladas</p></div><span class="chart-unit">h</span></div>
+            <div class="chart-canvas chart-canvas-tall"><canvas id="downtime-chart" aria-label="Equipos con más downtime"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Costo directo por estrategia</h3><p>Distribución de costo en millones de CLP</p></div><span class="chart-unit">M CLP</span></div>
+            <div class="chart-canvas"><canvas id="cost-chart" aria-label="Costo directo por tipo de mantenimiento"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Activos con mayor costo</h3><p>Diez equipos con mayor costo directo</p></div><span class="chart-unit">M CLP</span></div>
+            <div class="chart-canvas chart-canvas-tall"><canvas id="cost-team-chart" aria-label="Activos con mayor costo directo"></canvas></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view-panel" id="view-activos" data-panel="activos" aria-label="Análisis de activos" hidden>
+        <div class="section-heading"><div><span class="section-kicker">02 / CRITICIDAD</span><h2>Activos prioritarios</h2></div><span class="section-note">Frecuencia correctiva frente a downtime medio de reparación</span></div>
+        <div class="chart-grid chart-grid-two">
+          <article class="chart-card chart-card-wide">
+            <div class="chart-heading"><div><h3>Jack-Knife de equipos</h3><p>Frecuencia y MTTR normalizados respecto del parque</p></div><span class="chart-unit">RIESGO RELATIVO</span></div>
+            <div class="quadrant-legend"><span><i class="legend-dot dot-green"></i>Bajo control</span><span><i class="legend-dot dot-amber"></i>Agudo</span><span><i class="legend-dot dot-blue"></i>Crónico</span><span><i class="legend-dot dot-coral"></i>Grave</span></div>
+            <div class="chart-canvas chart-canvas-jackknife"><canvas id="jackknife-chart" aria-label="Diagrama Jack-Knife de equipos"></canvas></div>
+          </article>
+          <article class="chart-card table-card">
+            <div class="chart-heading"><div><h3>Mayor riesgo relativo</h3><p>Activos ordenados por N* × MTTR*</p></div><span class="chart-unit">TOP 10</span></div>
+            <div class="table-scroll"><table><thead><tr><th>Equipo</th><th>Fallas</th><th>MTTR</th><th>R*</th></tr></thead><tbody id="asset-table-body"></tbody></table></div>
+          </article>
+          <article class="chart-card chart-card-wide">
+            <div class="chart-heading"><div><h3>MTTR por tipo de equipo</h3><p>Tiempo medio de reparación en correctivos cerrados con fechas válidas</p></div><span class="chart-unit">h</span></div>
+            <div class="chart-canvas chart-canvas-tall"><canvas id="mttr-type-chart" aria-label="MTTR por tipo de equipo"></canvas></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view-panel" id="view-fallas" data-panel="fallas" aria-label="Análisis de modos de falla" hidden>
+        <div class="section-heading"><div><span class="section-kicker">03 / PARETO</span><h2>Modos de falla</h2></div><span class="section-note">Frecuencia, downtime y costo directo en órdenes correctivas</span></div>
+        <div class="chart-grid chart-grid-two">
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Fallas recurrentes</h3><p>Eventos y participación acumulada</p></div><span class="chart-unit">EVENTOS</span></div>
+            <div class="chart-canvas chart-canvas-tall"><canvas id="failure-chart" aria-label="Pareto de modos de falla por frecuencia"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Downtime por modo de falla</h3><p>Impacto acumulado de los principales modos</p></div><span class="chart-unit">h</span></div>
+            <div class="chart-canvas chart-canvas-tall"><canvas id="failure-downtime-chart" aria-label="Downtime acumulado por modo de falla"></canvas></div>
+          </article>
+          <article class="chart-card">
+            <div class="chart-heading"><div><h3>Costo por modo de falla</h3><p>Costos directos acumulados de los principales modos</p></div><span class="chart-unit">M CLP</span></div>
+            <div class="chart-canvas chart-canvas-tall"><canvas id="failure-cost-chart" aria-label="Costo acumulado por modo de falla"></canvas></div>
+          </article>
+          <article class="chart-card chart-card-wide">
+            <div class="chart-heading"><div><h3>Jack-Knife de modos de falla</h3><p>Frecuencia correctiva frente a downtime medio por modo</p></div><span class="chart-unit">RIESGO RELATIVO</span></div>
+            <div class="quadrant-legend"><span><i class="legend-dot dot-green"></i>Bajo control</span><span><i class="legend-dot dot-amber"></i>Agudo</span><span><i class="legend-dot dot-blue"></i>Crónico</span><span><i class="legend-dot dot-coral"></i>Grave</span></div>
+            <div class="chart-canvas chart-canvas-jackknife"><canvas id="failure-jackknife-chart" aria-label="Diagrama Jack-Knife por modo de falla"></canvas></div>
+          </article>
+          <article class="chart-card chart-card-wide table-card">
+            <div class="chart-heading"><div><h3>Priorización de fallas</h3><p>Eventos, downtime y costo directo asociado</p></div><span class="chart-unit">TOP 10</span></div>
+            <div class="table-scroll"><table><thead><tr><th>Modo de falla</th><th>Eventos</th><th>Acumulado</th><th>Downtime</th><th>Costo</th></tr></thead><tbody id="failure-table-body"></tbody></table></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="empty-state" id="empty-state" hidden>
+        <div class="empty-mark"><i data-lucide="file-spreadsheet" aria-hidden="true"></i></div>
+        <h2>Sube un dataset para comenzar</h2>
+        <p>Selecciona un CSV exportado desde el CMMS. El análisis se procesa íntegramente en este navegador.</p>
+        <button class="button button-primary" id="empty-upload" type="button"><i data-lucide="upload" aria-hidden="true"></i><span>Seleccionar archivo</span></button>
+      </section>
+
+      <footer class="page-footer"><span>CMMS · Gestión de mantenimiento</span><span>Los datos permanecen en este navegador</span></footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="drop-overlay" id="drop-overlay" aria-hidden="true"><div><i data-lucide="file-up" aria-hidden="true"></i><strong>Suelta el CSV para analizarlo</strong></div></div>
+  <section class="print-report" id="print-report" aria-hidden="true"></section>
+</body>
+</html>
